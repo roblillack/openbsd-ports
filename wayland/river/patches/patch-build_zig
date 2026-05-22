@@ -1,22 +1,16 @@
 Link against versioned shared libraries on OpenBSD.
 
-OpenBSD ships only versioned shared libraries (libfoo.so.X.Y) and Zig's
-linker cannot resolve unversioned -lfoo references against them, so
-linkSystemLibrary() fails. Reference the versioned objects directly and
-add the pkg-config-derived include paths explicitly.
+OpenBSD ships only versioned shared libraries (libfoo.so.X.Y) and there
+are no unversioned symlinks, so Zig's linkSystemLibrary() cannot resolve
+plain -lfoo references. Add a small helper that picks the highest X.Y
+version of lib<name>.so.* found in the configured library directory at
+build time, and feed the resolved path to addObjectFile() instead of
+hardcoding versions that would break on every minor library bump.
 
 Index: build.zig
 --- build.zig.orig
 +++ build.zig
-@@ -4,7 +4,6 @@
- const std = @import("std");
- const assert = std.debug.assert;
- const Build = std.Build;
--const fs = std.fs;
- const mem = std.mem;
-
- const manifest = @import("build.zig.zon");
-@@ -134,12 +133,14 @@ pub fn build(b: *Build) !void {
+@@ -134,12 +134,14 @@ pub fn build(b: *Build) !void {
      wlroots.addImport("xkbcommon", xkbcommon);
      wlroots.addImport("pixman", pixman);
 
@@ -32,11 +26,11 @@ Index: build.zig
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/libdrm" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/pixman-1" });
-+    wlroots.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libwlroots-0.19.so.0.0" });
++    wlroots.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.19") });
 
      const flags = b.createModule(.{ .root_source_file = b.path("common/flags.zig") });
      const slotmap = b.createModule(.{ .root_source_file = b.path("common/slotmap.zig") });
-@@ -158,12 +159,18 @@ pub fn build(b: *Build) !void {
+@@ -158,12 +160,18 @@ pub fn build(b: *Build) !void {
          river.root_module.addOptions("build_options", options);
 
          river.root_module.link_libc = true;
@@ -52,12 +46,56 @@ Index: build.zig
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/libdrm" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/pixman-1" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libevdev.so.0.0" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libinput.so.0.3" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libwayland-server.so.0.4" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libwlroots-0.19.so.0.0" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/local/lib/libxkbcommon.so.4.2" });
-+        river.root_module.addObjectFile(.{ .cwd_relative = "/usr/X11R6/lib/libpixman-1.so.46.4" });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "evdev") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "input") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wayland-server") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.19") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "xkbcommon") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/X11R6/lib", "pixman-1") });
 
          river.root_module.addImport("wayland", wayland);
          river.root_module.addImport("xkbcommon", xkbcommon);
+@@ -245,4 +253,43 @@ pub fn build(b: *Build) !void {
+         test_step.dependOn(&run_slotmap_test.step);
+         test_step.dependOn(&run_deque_test.step);
+     }
++}
++
++// Find the highest-versioned shared library named lib<basename>.so.<major>.<minor>
++// in dir_path. OpenBSD's shared libraries are always versioned and there are no
++// unversioned symlinks, so Zig's linkSystemLibrary() cannot find them; we feed
++// the resolved path to addObjectFile() instead.
++fn latestLib(b: *Build, dir_path: []const u8, basename: []const u8) ![]const u8 {
++    var dir = try fs.openDirAbsolute(dir_path, .{ .iterate = true });
++    defer dir.close();
++
++    const prefix = b.fmt("lib{s}.so.", .{basename});
++
++    var best_major: i64 = -1;
++    var best_minor: i64 = -1;
++    var best_name: ?[]const u8 = null;
++
++    var it = dir.iterate();
++    while (try it.next()) |entry| {
++        if (!mem.startsWith(u8, entry.name, prefix)) continue;
++        const rest = entry.name[prefix.len..];
++        var sit = mem.splitScalar(u8, rest, '.');
++        const maj_str = sit.next() orelse continue;
++        const min_str = sit.next() orelse continue;
++        if (sit.next() != null) continue;
++        const maj = std.fmt.parseInt(i64, maj_str, 10) catch continue;
++        const min = std.fmt.parseInt(i64, min_str, 10) catch continue;
++        if (maj > best_major or (maj == best_major and min > best_minor)) {
++            best_major = maj;
++            best_minor = min;
++            best_name = b.fmt("{s}", .{entry.name});
++        }
++    }
++
++    const name = best_name orelse {
++        std.log.err("no versioned shared library lib{s}.so.* found in {s}", .{ basename, dir_path });
++        return error.LibraryNotFound;
++    };
++
++    return b.fmt("{s}/{s}", .{ dir_path, name });
+ }
