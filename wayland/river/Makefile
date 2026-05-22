@@ -1,12 +1,14 @@
 COMMENT =	non-monolithic Wayland compositor
 
-V =		0.4.1
+V =		0.4.5
 
 DIST_TUPLE +=	codeberg river river v${V} .
 DIST_TUPLE +=	codeberg ifreund zig-pixman v0.3.0 .
-DIST_TUPLE +=	codeberg ifreund zig-wayland v0.5.0 .
-DIST_TUPLE +=	codeberg ifreund zig-wlroots v0.19.4 .
+DIST_TUPLE +=	codeberg ifreund zig-wayland v0.6.0 .
+DIST_TUPLE +=	codeberg ifreund zig-wlroots v0.20.1 .
 DIST_TUPLE +=	codeberg ifreund zig-xkbcommon v0.4.0 .
+DIST_TUPLE +=	codeberg ziglang translate-c \
+		57c559cf581b1fcad90494eda219f98abeb155ce .
 
 CATEGORIES =	wayland
 
@@ -19,7 +21,8 @@ PERMIT_PACKAGE =	Yes
 
 WRKDIST =	${WRKDIR}/river
 
-MODULES =	wayland/wlroots
+MODULES =		wayland/wlroots
+MODWLROOTS_VERSION =	0.20
 
 COMPILER =	base-clang
 COMPILER_LANGS = c
@@ -39,9 +42,10 @@ WANTLIB +=	c evdev input pixman-1 wayland-server xkbcommon
 # directory names under the Zig global cache. Update whenever the deps in
 # build.zig.zon are bumped.
 PIXMAN_HASH =		pixman-0.3.0-LClMnz2VAAAs7QSCGwLimV5VUYx0JFnX5xWU6HwtMuDX
-WAYLAND_HASH =		wayland-0.5.0-lQa1knz8AQCh08NA8BeQrwJB9U3CfqcVAdHZYGRKIGuu
-WLROOTS_HASH =		wlroots-0.19.4-jmOlcqQMBABhKYH6NMSnoK1sohTbhc97_JP-hGg2UZaK
+WAYLAND_HASH =		wayland-0.6.0-lQa1kqz8AQADQmdNJsNhLoNHcnEGEUjrOaPV-dtEnEmX
+WLROOTS_HASH =		wlroots-0.20.1-jmOlcqNVBAB3uB5oqBTzpRlwu-FmMyyZMVAWCe5kmcSt
 XKBCOMMON_HASH =	xkbcommon-0.4.0-VDqIe0i2AgDRsok2GpMFYJ8SVhQS10_PI2M_CnHXsJJZ
+TRANSLATE_C_HASH =	translate_c-0.0.0-Q_BUWlX1BgCD1wo6uo97prlp9VJ4gxAjwN_vZ7nsSjGN
 
 ZIG_CACHE =	${WRKBUILD}/zig-global-cache
 
@@ -51,6 +55,7 @@ MAKE_ENV +=	ZIG_GLOBAL_CACHE_DIR=${ZIG_CACHE} \
 ZIG_FLAGS =	--global-cache-dir ${ZIG_CACHE} \
 		--cache-dir ${WRKBUILD}/zig-local-cache \
 		-Doptimize=ReleaseSafe \
+		-Dllvm=true \
 		-Dpie=true \
 		-Dxwayland=true \
 		-Dman-pages=true \
@@ -61,10 +66,11 @@ ZIG_FLAGS =	--global-cache-dir ${ZIG_CACHE} \
 # during the build.
 post-extract:
 	mkdir -p ${ZIG_CACHE}/p
-	mv ${WRKDIR}/zig-pixman    ${ZIG_CACHE}/p/${PIXMAN_HASH}
-	mv ${WRKDIR}/zig-wayland   ${ZIG_CACHE}/p/${WAYLAND_HASH}
-	mv ${WRKDIR}/zig-wlroots   ${ZIG_CACHE}/p/${WLROOTS_HASH}
-	mv ${WRKDIR}/zig-xkbcommon ${ZIG_CACHE}/p/${XKBCOMMON_HASH}
+	mv ${WRKDIR}/zig-pixman      ${ZIG_CACHE}/p/${PIXMAN_HASH}
+	mv ${WRKDIR}/zig-wayland     ${ZIG_CACHE}/p/${WAYLAND_HASH}
+	mv ${WRKDIR}/zig-wlroots     ${ZIG_CACHE}/p/${WLROOTS_HASH}
+	mv ${WRKDIR}/zig-xkbcommon   ${ZIG_CACHE}/p/${XKBCOMMON_HASH}
+	mv ${WRKDIR}/translate-c   ${ZIG_CACHE}/p/${TRANSLATE_C_HASH}
 
 # Build into a staging prefix so the install step has somewhere writable.
 # The fake-install phase re-invokes the install step with the real prefix.

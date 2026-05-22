@@ -10,7 +10,7 @@ hardcoding versions that would break on every minor library bump.
 Index: build.zig
 --- build.zig.orig
 +++ build.zig
-@@ -134,12 +134,14 @@ pub fn build(b: *Build) !void {
+@@ -144,12 +144,14 @@ pub fn build(b: *Build) !void {
      wlroots.addImport("xkbcommon", xkbcommon);
      wlroots.addImport("pixman", pixman);
 
@@ -18,22 +18,35 @@ Index: build.zig
 -    // exposed to the wlroots module for @cImport() to work. This seems to be
 -    // the best way to do so with the current std.Build API.
      wlroots.resolved_target = target;
--    const wlroots_pkgconf = "wlroots-0.19";
+-    const wlroots_pkgconf = "wlroots-0.20";
 -    wlroots.linkSystemLibrary(wlroots_pkgconf, .{});
-+    wlroots.addIncludePath(.{ .cwd_relative = "/usr/local/include/wlroots-0.19" });
++    wlroots.addIncludePath(.{ .cwd_relative = "/usr/local/include/wlroots-0.20" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/local/include" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/local/include/libepoll-shim" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/libdrm" });
 +    wlroots.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/pixman-1" });
-+    wlroots.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.19") });
++    wlroots.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.20") });
 
      const flags = b.createModule(.{ .root_source_file = b.path("common/flags.zig") });
      const slotmap = b.createModule(.{ .root_source_file = b.path("common/slotmap.zig") });
-@@ -158,12 +160,18 @@ pub fn build(b: *Build) !void {
+@@ -160,8 +162,10 @@ pub fn build(b: *Build) !void {
+         .target = target,
+         .optimize = optimize,
+     });
+-    translate_c.linkSystemLibrary("libevdev", .{});
+-    translate_c.linkSystemLibrary("libinput", .{});
++    translate_c.addIncludePath(.{ .cwd_relative = "/usr/local/include" });
++    translate_c.addIncludePath(.{ .cwd_relative = "/usr/local/include/libepoll-shim" });
++    translate_c.mod.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "evdev") });
++    translate_c.mod.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "input") });
+
+     {
+         const river = b.addExecutable(.{
+@@ -178,12 +182,18 @@ pub fn build(b: *Build) !void {
+         });
          river.root_module.addOptions("build_options", options);
 
-         river.root_module.link_libc = true;
 -        river.root_module.linkSystemLibrary("libevdev", .{});
 -        river.root_module.linkSystemLibrary("libinput", .{});
 -        river.root_module.linkSystemLibrary("wayland-server", .{});
@@ -42,22 +55,22 @@ Index: build.zig
 -        river.root_module.linkSystemLibrary("pixman-1", .{});
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/include" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/include/libepoll-shim" });
-+        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/include/wlroots-0.19" });
++        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/local/include/wlroots-0.20" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/libdrm" });
 +        river.root_module.addIncludePath(.{ .cwd_relative = "/usr/X11R6/include/pixman-1" });
 +        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "evdev") });
 +        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "input") });
 +        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wayland-server") });
-+        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.19") });
++        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "wlroots-0.20") });
 +        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/local/lib", "xkbcommon") });
 +        river.root_module.addObjectFile(.{ .cwd_relative = try latestLib(b, "/usr/X11R6/lib", "pixman-1") });
 
          river.root_module.addImport("wayland", wayland);
          river.root_module.addImport("xkbcommon", xkbcommon);
-@@ -245,4 +253,43 @@ pub fn build(b: *Build) !void {
+@@ -257,4 +267,44 @@ pub fn build(b: *Build) !void {
+         const test_step = b.step("test", "Run the tests");
          test_step.dependOn(&run_slotmap_test.step);
-         test_step.dependOn(&run_deque_test.step);
      }
 +}
 +
@@ -66,8 +79,9 @@ Index: build.zig
 +// unversioned symlinks, so Zig's linkSystemLibrary() cannot find them; we feed
 +// the resolved path to addObjectFile() instead.
 +fn latestLib(b: *Build, dir_path: []const u8, basename: []const u8) ![]const u8 {
-+    var dir = try fs.openDirAbsolute(dir_path, .{ .iterate = true });
-+    defer dir.close();
++    const io = b.graph.io;
++    var dir = try std.Io.Dir.openDirAbsolute(io, dir_path, .{});
++    defer dir.close(io);
 +
 +    const prefix = b.fmt("lib{s}.so.", .{basename});
 +
@@ -76,7 +90,7 @@ Index: build.zig
 +    var best_name: ?[]const u8 = null;
 +
 +    var it = dir.iterate();
-+    while (try it.next()) |entry| {
++    while (try it.next(io)) |entry| {
 +        if (!mem.startsWith(u8, entry.name, prefix)) continue;
 +        const rest = entry.name[prefix.len..];
 +        var sit = mem.splitScalar(u8, rest, '.');
