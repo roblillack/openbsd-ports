@@ -1,6 +1,7 @@
 @option no-default-conflict
 @option is-branch
-@conflict wlroots-0.19.*
+@conflict wlroots->=0.19v0,<0.20v0
+@pkgpath wayland/wlroots
 include/wlroots-${MODWLROOTS_VERSION}/
 include/wlroots-${MODWLROOTS_VERSION}/wlr/
 include/wlroots-${MODWLROOTS_VERSION}/wlr/backend/

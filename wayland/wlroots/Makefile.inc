@@ -1,6 +1,7 @@
 COMMENT ?=	modular Wayland compositor library (${MODWLROOTS_VERSION})
 
 DISTNAME =	wlroots-${V}
+EPOCH =		0
 PKGSTEM ?=	wlroots-${MODWLROOTS_VERSION}
 CATEGORIES =	wayland
 
